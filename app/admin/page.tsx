@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialisation directe et sécurisée
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -21,10 +20,9 @@ export default function AdminPage() {
     status: 'Disponible'
   });
 
-  const [products, setProducts] = useState<any[]>([
-    { id: '1', name: 'DIVA', category: 'HAUTE COUTURE', status: 'Disponible' },
-    { id: '2', name: 'CRYSTAL', category: 'STREET COUTURE', status: 'Disponible' }
-  ]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -41,7 +39,31 @@ export default function AdminPage() {
       
       if (data && data.length > 0) setProducts(data);
     } catch (e) {
-      console.log("Supabase non connecté, affichage local.");
+      console.log("Supabase non connecté.");
+    }
+  };
+
+  const handleImageUpload = async (file: File): Promise<string | null> => {
+    if (!supabase) return null;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `items/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('products-images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('products-images')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (err: any) {
+      console.error("Erreur d'upload photo :", err.message);
+      return null;
     }
   };
 
@@ -49,6 +71,17 @@ export default function AdminPage() {
     e.preventDefault();
     if (!formData.name) return;
     setLoading(true);
+
+    let imageUrl = '/diva.jpg'; // photo par défaut si aucune n'est chargée
+
+    if (imageFile) {
+      setUploading(true);
+      const uploadedUrl = await handleImageUpload(imageFile);
+      if (uploadedUrl) {
+        imageUrl = uploadedUrl;
+      }
+      setUploading(false);
+    }
 
     try {
       if (!supabase) throw new Error("Supabase non disponible");
@@ -62,12 +95,12 @@ export default function AdminPage() {
           description: formData.description,
           materials: formData.materials ? formData.materials.split(',') : [],
           status: formData.status,
-          images: ['/diva.jpg']
+          images: [imageUrl]
         }
       ]);
 
       if (error) throw error;
-      alert(`Création "${formData.name}" enregistrée dans Supabase avec succès !`);
+      alert(`Création "${formData.name}" enregistrée dans Supabase avec sa photo !`);
       fetchProducts();
     } catch (err: any) {
       const newProd = {
@@ -81,6 +114,7 @@ export default function AdminPage() {
     }
 
     setLoading(false);
+    setImageFile(null);
     setFormData({
       name: '',
       category: 'HAUTE COUTURE',
@@ -124,6 +158,17 @@ export default function AdminPage() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full bg-[#0D0D0E] border border-[#2A2A2D] p-3 text-sm text-white focus:outline-none focus:border-[#B91C1C]"
                   required
+                />
+              </div>
+
+              {/* CHAMP D'UPLOAD PHOTO */}
+              <div>
+                <label className="block text-xs uppercase text-[#8E8D8A] mb-1">Photo du Modèle</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  className="w-full bg-[#0D0D0E] border border-[#2A2A2D] p-3 text-sm text-white file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-semibold file:bg-[#B91C1C] file:text-white hover:file:bg-[#991B1B] cursor-pointer"
                 />
               </div>
 
@@ -178,10 +223,10 @@ export default function AdminPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || uploading}
                 className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white text-xs font-bold uppercase tracking-widest py-4 transition disabled:opacity-50 cursor-pointer"
               >
-                {loading ? 'Publication...' : 'Publier le Modèle'}
+                {uploading ? 'Envoi de l\'image...' : loading ? 'Publication...' : 'Publier le Modèle'}
               </button>
             </form>
           </div>
@@ -194,10 +239,19 @@ export default function AdminPage() {
 
             <div className="space-y-3">
               {products.map((item) => (
-                <div key={item.id} className="bg-[#0D0D0E] p-4 border border-[#2A2A2D] flex justify-between items-center">
-                  <div>
-                    <h3 className="font-bold text-white text-sm">{item.name}</h3>
-                    <p className="text-[10px] text-[#8E8D8A] uppercase">{item.category}</p>
+                <div key={item.id} className="bg-[#0D0D0E] p-4 border border-[#2A2A2D] flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    {item.images && item.images[0] && (
+                      <img 
+                        src={item.images[0]} 
+                        alt={item.name} 
+                        className="w-12 h-12 object-cover border border-[#2A2A2D]"
+                      />
+                    )}
+                    <div>
+                      <h3 className="font-bold text-white text-sm">{item.name}</h3>
+                      <p className="text-[10px] text-[#8E8D8A] uppercase">{item.category}</p>
+                    </div>
                   </div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D] bg-[#15803D]/10 px-2 py-1">
                     {item.status || 'Disponible'}
